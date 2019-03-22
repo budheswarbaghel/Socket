@@ -4,8 +4,59 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 #define QUEUE_LIMIT 5
+
+void *handler(void *sock_desc) {
+
+	int temp_sock = *(int*) sock_desc;
+
+	char *greetings = "Welcome To levithan server!";
+	unsigned short size = strlen(greetings);
+
+	if (send(temp_sock, greetings, size, 0) < 0) {
+
+		perror("Greeting message is not sent");
+		exit(EXIT_FAILURE);
+	} else {
+
+		printf("Greeting message was delivered to client := %d\n\n", temp_sock);
+	}
+
+	char buffer[256] = {0};
+	size = 256;
+
+	while (1) {
+
+		if (recv(temp_sock, buffer, size, 0) < 0) {
+
+			perror("Can't recieve the message");
+			exit(EXIT_FAILURE);
+		} else {
+
+			printf("Client: %s", buffer);
+		}
+
+		if (strncmp("bye!", buffer, 4) == 0) break;
+		else bzero(buffer, size);
+		
+		printf("Server: ");
+		fgets(buffer, size, stdin);
+		printf("\n");
+
+		if (send(temp_sock, buffer, size, 0) < 0) {
+
+			perror("Can't send the message");
+			exit(EXIT_FAILURE);
+		}
+
+		if (strncmp("bye!", buffer, 4) == 0) break;
+		else bzero(buffer, size);
+	}
+
+	return 0;
+}
 
 int main (int argc, char *argv[]) {
 
@@ -41,57 +92,31 @@ int main (int argc, char *argv[]) {
 		struct sockaddr_in client;
 		int client_len = sizeof(client);
 
-		int temp_sock = accept(socket_id, (struct sockaddr*) &client, (socklen_t*) &client_len);
-		if (temp_sock < 0) {
+		pthread_t tid;
+		pthread_attr_t tattr;
+		pthread_attr_init(&tattr);
 
-			perror("Connection is not accepted");
-			exit(EXIT_FAILURE);
-		} else {
+		int temp_sock;
+		while(temp_sock = accept(socket_id, (struct sockaddr*) &client, (socklen_t*) &client_len)) {
 
-			printf("Connection is established with client := %d\n", temp_sock);
-		}
+			if (temp_sock < 0) {
 
-		char *greetings = "Welcome To levithan server!";
-		unsigned short size = strlen(greetings);
-
-		if (send(temp_sock, greetings, size, 0) < 0) {
-
-			perror("Greeting message is not sent");
-			exit(EXIT_FAILURE);
-		} else {
-
-			printf("Greeting message was delivered to client := %d\n\n", temp_sock);
-		}
-
-		char buffer[256] = {0};
-		size = 256;
-
-		while (1) {
-
-			if (recv(temp_sock, buffer, size, 0) < 0) {
-
-				perror("Can't recieve the message");
+				perror("Connection is not accepted");
 				exit(EXIT_FAILURE);
 			} else {
 
-				printf("Client: %s", buffer);
+				printf("Connection is established with client := %d\n", temp_sock);
+
+				if (pthread_create(&tid, &tattr, handler, (void *) &temp_sock) < 0) {
+
+					perror("Thread was not created");
+					exit(EXIT_FAILURE);
+				} else {
+
+					if (pthread_join(tid, NULL) == 0) 
+						printf("Connection is closed for client := %d\n\n", temp_sock);
+				}
 			}
-
-			if (strncmp("bye!", buffer, 4) == 0) break;
-			else bzero(buffer, size);
-			
-			printf("Server: ");
-			fgets(buffer, size, stdin);
-			printf("\n");
-
-			if (send(temp_sock, buffer, size, 0) < 0) {
-
-				perror("Can't send the message");
-				exit(EXIT_FAILURE);
-			}
-
-			if (strncmp("bye!", buffer, 4) == 0) break;
-			else bzero(buffer, size);
 		}
 
 		if (close(socket_id) < 0) {
